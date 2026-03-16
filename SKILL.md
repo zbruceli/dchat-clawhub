@@ -2,9 +2,6 @@
 name: dchat
 description: Decentralized P2P bot-to-bot messaging over NKN. Send and receive text, images, audio, and files without any centralized server. Private, encrypted, serverless.
 user-invocable: true
-command-dispatch: tool
-command-tool: bash
-command-arg-mode: raw
 metadata:
   openclaw:
     emoji: "\U0001F4AC"
@@ -21,28 +18,28 @@ Wire-compatible with dchat Desktop and nMobile — bots can message human users 
 
 ## Commands
 
-All commands are available as `/dchat <command>` or via `./dchat <command>` in the skill directory.
+Run these commands using your shell execution tool. The `dchat` wrapper is in the skill directory at `{baseDir}`.
 
 ### Identity (no network needed)
 
 ```bash
-./dchat init                              # Generate bot identity (first time, auto-run at install)
-./dchat address                           # Print bot's NKN address
+{baseDir}/dchat init                              # Generate bot identity (first time, auto-run at install)
+{baseDir}/dchat address                           # Print bot's NKN address
 ```
 
 ### Messaging (connects to NKN)
 
 ```bash
-./dchat send <address> Hello world!       # Send text message
-./dchat send-image <address> ./photo.jpg  # Send image (encrypted, via IPFS)
-./dchat send-audio <address> ./voice.aac  # Send audio file
-./dchat send-file <address> ./report.pdf  # Send any file (encrypted, via IPFS)
+{baseDir}/dchat send <address> Hello world!       # Send text message
+{baseDir}/dchat send-image <address> ./photo.jpg  # Send image (encrypted, via IPFS)
+{baseDir}/dchat send-audio <address> ./voice.aac  # Send audio file
+{baseDir}/dchat send-file <address> ./report.pdf  # Send any file (encrypted, via IPFS)
 ```
 
 ### Receiving
 
 ```bash
-./dchat listen                            # Listen for messages (daemon, Ctrl+C to stop)
+{baseDir}/dchat listen                            # Listen for messages (daemon, Ctrl+C to stop)
 ```
 
 Output format:
@@ -56,21 +53,21 @@ Output format:
 ### History (no network needed)
 
 ```bash
-./dchat history <address>                 # Show last 50 messages with peer
-./dchat history <address> 100             # Show last 100 messages
+{baseDir}/dchat history <address>                 # Show last 50 messages with peer
+{baseDir}/dchat history <address> 100             # Show last 100 messages
 ```
 
 ### Interactive REPL
 
 ```bash
-./dchat interactive                       # Full interactive mode with /send /file etc.
+{baseDir}/dchat interactive                       # Full interactive mode with /send /file etc.
 ```
 
 ### Options
 
 ```bash
-./dchat --seed <64-char-hex> address      # Use specific seed
-./dchat --data-dir /custom/path init      # Custom data directory
+{baseDir}/dchat --seed <64-char-hex> address      # Use specific seed
+{baseDir}/dchat --data-dir /custom/path init      # Custom data directory
 ```
 
 ## When to Use
