@@ -98,7 +98,7 @@ async function main() {
     });
   });
 
-  const sentId = await bot.sendText(address, ECHO_TEXT);
+  const sentId = bot.sendText(address, ECHO_TEXT);
   pass(`Sent message ID: ${sentId}`);
 
   // ── Step 5: Wait for echo ────────────────────────────

@@ -125,8 +125,10 @@ async function cmdSend(dataDir: string, seed: string, target: string, message: s
   try {
     console.log("Connecting...");
     await bot.start();
-    const id = await bot.sendText(target, message);
+    const id = bot.sendText(target, message);
     console.log(`Sent: ${id}`);
+    // Brief wait for NKN to dispatch the fire-and-forget message
+    await new Promise((r) => setTimeout(r, 1000));
   } finally {
     await bot.stop();
   }
@@ -268,7 +270,7 @@ async function cmdInteractive(dataDir: string, seed: string) {
         case "/send": {
           const [, addr, ...rest] = parts;
           if (!addr || rest.length === 0) { console.log("Usage: /send <address> <message>"); break; }
-          console.log(`Sent: ${await bot.sendText(addr, rest.join(" "))}`);
+          console.log(`Sent: ${bot.sendText(addr, rest.join(" "))}`);
           break;
         }
         case "/image": {

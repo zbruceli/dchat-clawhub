@@ -97,10 +97,14 @@ export class DchatBot extends EventEmitter {
 
   // ── Sending ──────────────────────────────────────────────
 
-  /** Send a text message. Returns message ID. */
-  async sendText(to: string, text: string): Promise<string> {
+  /**
+   * Send a text message. Returns message ID.
+   * Fire-and-forget: NKN holds messages for offline recipients up to 1 hour.
+   * Delivery confirmation arrives asynchronously via receipt messages.
+   */
+  sendText(to: string, text: string): string {
     const msg = this.buildMessage("text", text);
-    await this.sendAndStore(to, msg);
+    this.sendAndStoreNoReply(to, msg);
     return msg.id;
   }
 
@@ -116,11 +120,7 @@ export class DchatBot extends EventEmitter {
   async sendAudio(to: string, filePath: string, durationSeconds?: number): Promise<string> {
     const result = await this.media.uploadAudio(filePath, durationSeconds);
     const msg = this.buildMessage("audio", result.content, result.options);
-    if (result.options.ipfsHash) {
-      this.sendAndStoreNoReply(to, msg, result.localFilePath);
-    } else {
-      await this.sendAndStore(to, msg, result.localFilePath);
-    }
+    this.sendAndStoreNoReply(to, msg, result.localFilePath);
     return msg.id;
   }
 
