@@ -29,11 +29,15 @@ Use this skill when the user or another agent wants to:
 
 All commands go through the `dchat-bot` CLI at the project root. Always build first if not already built.
 
-### Setup (first time only)
+### Setup
+
+Identity is auto-generated at install time (`./install.sh` runs `--init`). No manual setup needed. To verify or re-init:
 
 ```bash
-cd /path/to/dchat-clawhub && npm run build
+cd /path/to/dchat-clawhub && node dist/cli.js --init
 ```
+
+This generates a seed, derives the NKN address offline (no network needed), and saves both encrypted to `~/.dchat-clawhub/identity.enc`.
 
 ### Get bot address
 
@@ -41,7 +45,7 @@ cd /path/to/dchat-clawhub && npm run build
 cd /path/to/dchat-clawhub && node dist/cli.js --address
 ```
 
-This connects to NKN, prints the bot's address, and exits. The address is deterministic from the seed. A seed is auto-generated on first run and saved to `~/.dchat-clawhub/seed`.
+Prints the bot's NKN address instantly (no network connection required). The address is deterministic from the seed.
 
 ### Send a text message
 
@@ -116,8 +120,8 @@ await bot.stop();
 
 ## Key Concepts
 
-- **NKN Address**: A 64-character hex public key. Each bot has a unique address derived from its seed. Example: `cb76d034e68d5e156114096a7a43ee3c43094b52143359117f87b0e91fb7a7e8`
-- **Seed**: A 64-character hex Ed25519 private key. Whoever holds the seed controls the identity. Stored encrypted via `SafeStorage`.
+- **NKN Address**: A 64-character hex public key derived from the seed. Each bot has a unique address. Can be derived offline (no network needed). Example: `cb76d034e68d5e156114096a7a43ee3c43094b52143359117f87b0e91fb7a7e8`
+- **Seed**: A 64-character hex Ed25519 private key. Whoever holds the seed controls the identity. Auto-generated at install and saved encrypted via `SafeStorage` to `~/.dchat-clawhub/identity.enc`.
 - **Media Transfer**: Images, audio, and files are encrypted with AES-128-GCM, uploaded to IPFS, and the hash + key are sent over NKN. Recipients auto-download and decrypt.
 - **Message History**: All sent/received messages are stored in a local SQLite database at `~/.dchat-clawhub/messages.db`.
 - **Delivery Receipts**: The protocol supports delivery and read receipts automatically.

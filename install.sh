@@ -11,7 +11,7 @@ npm install --production 2>/dev/null
 echo "[dchat] Building..."
 npm run build 2>/dev/null
 
-echo "[dchat] Verifying..."
-node dist/cli.js --help >/dev/null 2>&1
+echo "[dchat] Generating bot identity..."
+node dist/cli.js --init
 
 echo "[dchat] Installed successfully."

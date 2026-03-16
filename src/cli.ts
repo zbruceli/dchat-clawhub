@@ -6,9 +6,50 @@ import os from "os";
 import readline from "readline";
 import { DchatBot } from "./bot.js";
 import { NknClient } from "./client.js";
+import { SafeStorage } from "./storage.js";
 import type { IncomingMessage } from "./types.js";
 
 const DATA_DIR = path.join(os.homedir(), ".dchat-clawhub");
+
+/**
+ * Load or create bot identity.
+ * Uses SafeStorage (encrypted) as primary, falls back to legacy plaintext seed file.
+ */
+function loadOrCreateIdentity(dataDir: string): { seed: string; address: string; isNew: boolean } {
+  fs.mkdirSync(dataDir, { recursive: true });
+  const storage = new SafeStorage(dataDir);
+  const passphrase = getPassphrase(dataDir);
+
+  // Try SafeStorage first
+  if (storage.exists()) {
+    const identity = storage.load(passphrase);
+    if (identity) return { ...identity, isNew: false };
+  }
+
+  // Migrate legacy plaintext seed file if present
+  const legacySeedFile = path.join(dataDir, "seed");
+  if (fs.existsSync(legacySeedFile)) {
+    const seed = fs.readFileSync(legacySeedFile, "utf-8").trim();
+    const address = NknClient.deriveAddress(seed);
+    storage.save({ seed, address }, passphrase);
+    fs.unlinkSync(legacySeedFile); // remove plaintext after migration
+    return { seed, address, isNew: false };
+  }
+
+  // Generate fresh identity
+  const seed = NknClient.generateSeed();
+  const address = NknClient.deriveAddress(seed);
+  storage.save({ seed, address }, passphrase);
+  return { seed, address, isNew: true };
+}
+
+/**
+ * Derive a machine-local passphrase for unattended bot use.
+ * Combines hostname + username + a fixed salt — unique per machine/user but no manual input needed.
+ */
+function getPassphrase(dataDir: string): string {
+  return `dchat:${os.hostname()}:${os.userInfo().username}:${dataDir}`;
+}
 
 async function main() {
   const args = process.argv.slice(2);
@@ -18,6 +59,7 @@ async function main() {
 
 Usage:
   dchat-bot                     Start interactive mode
+  dchat-bot --init              Generate identity and exit (no network needed)
   dchat-bot --seed <hex>        Use specific seed
   dchat-bot --data-dir <path>   Custom data directory
   dchat-bot --send <addr> <msg> Send a message and exit
@@ -38,6 +80,7 @@ Data stored in: ${DATA_DIR}`);
   let sendFileTarget: string | undefined;
   let listenMode = false;
   let addressOnly = false;
+  let initOnly = false;
 
   for (let i = 0; i < args.length; i++) {
     switch (args[i]) {
@@ -61,20 +104,41 @@ Data stored in: ${DATA_DIR}`);
       case "--address":
         addressOnly = true;
         break;
+      case "--init":
+        initOnly = true;
+        break;
     }
   }
 
-  if (!seed) {
-    fs.mkdirSync(dataDir, { recursive: true });
-    const seedFile = path.join(dataDir, "seed");
-    if (fs.existsSync(seedFile)) {
-      seed = fs.readFileSync(seedFile, "utf-8").trim();
+  // --init: generate identity offline and exit (no NKN connection)
+  if (initOnly) {
+    const identity = loadOrCreateIdentity(dataDir);
+    if (identity.isNew) {
+      console.log("Generated new bot identity.");
     } else {
-      const { NknClient } = await import("./client.js");
-      seed = NknClient.generateSeed();
-      fs.writeFileSync(seedFile, seed, { mode: 0o600 });
-      console.log("Generated new identity (seed saved to", seedFile + ")");
+      console.log("Bot identity already exists.");
     }
+    console.log(`Address: ${identity.address}`);
+    console.log(`Data dir: ${dataDir}`);
+    process.exit(0);
+  }
+
+  // Resolve seed: explicit --seed flag, or load/create from SafeStorage
+  let address: string | undefined;
+  if (!seed) {
+    const identity = loadOrCreateIdentity(dataDir);
+    seed = identity.seed;
+    address = identity.address;
+    if (identity.isNew) {
+      console.log("Generated new bot identity.");
+    }
+  }
+
+  // --address: print derived address and exit (no NKN connection needed)
+  if (addressOnly) {
+    const addr = address ?? NknClient.deriveAddress(seed);
+    console.log(addr);
+    process.exit(0);
   }
 
   const bot = new DchatBot({ seed, dataDir });
@@ -89,13 +153,8 @@ Data stored in: ${DATA_DIR}`);
   process.on("SIGTERM", shutdown);
 
   console.log("Connecting to NKN network...");
-  const address = await bot.start();
-  console.log(`Bot address: ${address}`);
-
-  if (addressOnly) {
-    await bot.stop();
-    process.exit(0);
-  }
+  const connectedAddress = await bot.start();
+  console.log(`Bot address: ${connectedAddress}`);
 
   // One-shot send mode
   if (sendTarget && sendMessage) {
@@ -137,7 +196,7 @@ Data stored in: ${DATA_DIR}`);
     }
   });
 
-  bot.on("receipt", (_from: string, msgId: string) => {
+  bot.on("receipt", (_from: string, _msgId: string) => {
     // Silent — bots don't need delivery noise
   });
 

@@ -35,6 +35,14 @@ export class NknClient extends EventEmitter {
     return crypto.randomBytes(32).toString("hex");
   }
 
+  /**
+   * Derive the NKN address from a seed without connecting to the network.
+   */
+  static deriveAddress(seed: string): string {
+    const kp = nkn.crypto.keyPair(seed);
+    return Buffer.from(kp.publicKey).toString("hex");
+  }
+
   async connect(seed: string): Promise<ClientStatus> {
     if (this.client) await this.disconnect();
     this.updateStatus({ state: "connecting" });
