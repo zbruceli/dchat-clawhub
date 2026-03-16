@@ -101,7 +101,14 @@ export class NknClient extends EventEmitter {
 
   sendNoReply(dest: string, data: string): void {
     this.assertConnected();
-    this.client!.send(dest, data, { noReply: true, msgHoldingSeconds: 3600 });
+    // NKN SDK send() returns a promise even with noReply — catch to prevent
+    // unhandled rejection when client disconnects before delivery completes.
+    const p = this.client!.send(dest, data, { noReply: true, msgHoldingSeconds: 3600 });
+    if (p && typeof p.catch === "function") {
+      p.catch((err: unknown) => {
+        console.error("[nkn] send failed (non-blocking):", err instanceof Error ? err.message : err);
+      });
+    }
   }
 
   private assertConnected(): void {

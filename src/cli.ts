@@ -127,8 +127,8 @@ async function cmdSend(dataDir: string, seed: string, target: string, message: s
     await bot.start();
     const id = bot.sendText(target, message);
     console.log(`Sent: ${id}`);
-    // Brief wait for NKN to dispatch the fire-and-forget message
-    await new Promise((r) => setTimeout(r, 1000));
+    // Wait for NKN to dispatch the fire-and-forget message before closing
+    await new Promise((r) => setTimeout(r, 3000));
   } finally {
     await bot.stop();
   }
