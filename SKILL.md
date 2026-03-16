@@ -93,9 +93,17 @@ Use this skill when the user or another agent wants to:
 ## Security
 
 - AES-128-GCM encryption for all media before IPFS upload
-- Identity encrypted at rest (AES-256-GCM + PBKDF2, 100K iterations, file permissions 0600)
+- Identity encrypted at rest (AES-256-GCM + PBKDF2, 100K iterations). Encryption key (.passkey) stored in separate OS config directory (~/.config/dchat-clawhub/) from the ciphertext (~/.dchat-clawhub/), both with file permissions 0600
 - No centralized server — messages travel through NKN relay nodes
 - SSRF protection: ad-hoc IPFS gateways from incoming messages are DNS-resolved and all IPs verified as public (rejects RFC 1918, loopback, link-local, ULA, IPv4-mapped IPv6)
+
+## Network & Storage
+
+- Connects to NKN seed RPC servers (seed.nkn.org) for P2P relay
+- Uploads/downloads encrypted media via public IPFS gateways (ipfs.io, dweb.link)
+- Stores messages in local SQLite database (~/.dchat-clawhub/messages.db)
+- Caches downloaded media in ~/.dchat-clawhub/media-cache/
+- Install pulls 3 production npm packages: nkn-sdk, better-sqlite3, form-data
 
 ## Limitations
 

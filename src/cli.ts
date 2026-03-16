@@ -16,15 +16,36 @@ const DATA_DIR = path.join(os.homedir(), ".dchat-clawhub");
 
 /**
  * Get or create a random passphrase for encrypting the identity at rest.
- * Stored in a separate file (.passkey) so it's not deterministic/guessable.
+ *
+ * The passkey is stored in a SEPARATE directory from the encrypted identity
+ * (OS config dir vs data dir) so the encryption key is not alongside the
+ * ciphertext. This means a leak of ~/.dchat-clawhub/identity.enc alone
+ * does not expose the seed.
+ *
+ * Passkey location: ~/.config/dchat-clawhub/.passkey (mode 0600)
+ * Identity location: ~/.dchat-clawhub/identity.enc (mode 0600)
  */
 function getPassphrase(dataDir: string): string {
-  const keyFile = path.join(dataDir, ".passkey");
+  // Use XDG_CONFIG_HOME or platform-appropriate config dir, separate from dataDir
+  const configBase = process.env.XDG_CONFIG_HOME ?? path.join(os.homedir(), ".config");
+  const configDir = path.join(configBase, "dchat-clawhub");
+  const keyFile = path.join(configDir, ".passkey");
+
+  // Migration: move legacy .passkey from dataDir if present
+  const legacyKeyFile = path.join(dataDir, ".passkey");
+  if (fs.existsSync(legacyKeyFile) && !fs.existsSync(keyFile)) {
+    fs.mkdirSync(configDir, { recursive: true });
+    fs.renameSync(legacyKeyFile, keyFile);
+    fs.chmodSync(keyFile, 0o600);
+    return fs.readFileSync(keyFile, "utf-8").trim();
+  }
+
   if (fs.existsSync(keyFile)) {
     return fs.readFileSync(keyFile, "utf-8").trim();
   }
+
   const passphrase = crypto.randomBytes(32).toString("base64url");
-  fs.mkdirSync(dataDir, { recursive: true });
+  fs.mkdirSync(configDir, { recursive: true });
   fs.writeFileSync(keyFile, passphrase, { mode: 0o600 });
   return passphrase;
 }
