@@ -122,16 +122,12 @@ function cmdAddress(dataDir: string, explicitSeed?: string) {
 
 async function cmdSend(dataDir: string, seed: string, target: string, message: string) {
   const bot = new DchatBot({ seed, dataDir });
-  try {
-    console.log("Connecting...");
-    await bot.start();
-    const id = bot.sendText(target, message);
-    console.log(`Sent: ${id}`);
-    // Wait for NKN to dispatch the fire-and-forget message before closing
-    await new Promise((r) => setTimeout(r, 3000));
-  } finally {
-    await bot.stop();
-  }
+  console.log("Connecting...");
+  await bot.start();
+  const id = await bot.sendTextAwait(target, message);
+  console.log(`Sent: ${id}`);
+  // Exit immediately — NKN teardown logs noise (RPC timeouts) if we wait
+  process.exit(0);
 }
 
 async function cmdSendMedia(
@@ -158,8 +154,7 @@ async function cmdSendMedia(
         break;
     }
     console.log(`Sent ${type}: ${id}`);
-    // Brief wait for IPFS upload completion
-    await new Promise((r) => setTimeout(r, 2000));
+    process.exit(0);
   } finally {
     await bot.stop();
   }
