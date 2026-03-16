@@ -3,8 +3,10 @@ import https from "https";
 import http from "http";
 import type { IpfsGateway } from "./types.js";
 
+/** Public IPFS gateways — well-known, community-operated. */
 const DEFAULT_GATEWAYS: IpfsGateway[] = [
-  { host: "64.225.88.71", port: 80, protocol: "http:" }, // nMobile self-hosted
+  { host: "ipfs.io", port: 443, protocol: "https:" },
+  { host: "dweb.link", port: 443, protocol: "https:" },
 ];
 
 export class IpfsService {
@@ -15,7 +17,7 @@ export class IpfsService {
   }
 
   getPrimaryIp(): string {
-    return this.gateways[0]?.host ?? "64.225.88.71";
+    return this.gateways[0]?.host ?? "ipfs.io";
   }
 
   async upload(data: Buffer, fileName: string): Promise<string> {

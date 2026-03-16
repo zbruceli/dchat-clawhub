@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 
+import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import os from "os";
@@ -13,8 +14,19 @@ const DATA_DIR = path.join(os.homedir(), ".dchat-clawhub");
 
 // ── Identity helpers ───────────────────────────────────────
 
+/**
+ * Get or create a random passphrase for encrypting the identity at rest.
+ * Stored in a separate file (.passkey) so it's not deterministic/guessable.
+ */
 function getPassphrase(dataDir: string): string {
-  return `dchat:${os.hostname()}:${os.userInfo().username}:${dataDir}`;
+  const keyFile = path.join(dataDir, ".passkey");
+  if (fs.existsSync(keyFile)) {
+    return fs.readFileSync(keyFile, "utf-8").trim();
+  }
+  const passphrase = crypto.randomBytes(32).toString("base64url");
+  fs.mkdirSync(dataDir, { recursive: true });
+  fs.writeFileSync(keyFile, passphrase, { mode: 0o600 });
+  return passphrase;
 }
 
 function loadOrCreateIdentity(dataDir: string): { seed: string; address: string; isNew: boolean } {

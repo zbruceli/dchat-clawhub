@@ -6,12 +6,12 @@ SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
 cd "$SKILL_DIR"
 
 echo "[dchat] Installing dependencies..."
-npm install --production 2>/dev/null
+npm install
 
-echo "[dchat] Building..."
-npm run build 2>/dev/null
+echo "[dchat] Building TypeScript..."
+npm run build
 
 echo "[dchat] Generating bot identity..."
-node dist/cli.js --init
+node dist/cli.js init
 
 echo "[dchat] Installed successfully."

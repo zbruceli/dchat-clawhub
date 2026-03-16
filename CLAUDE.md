@@ -67,6 +67,6 @@ Messages are JSON `MessageData` objects sent as strings over NKN:
 - Identity seed at `{dataDir}/seed` (file permissions 0600)
 - Default dataDir: `~/.dchat-clawhub`
 
-## Reference Repository
+## Reference
 
-The dchat Desktop app at `/Users/zhengli/code/vibe_coding/dchat` is the reference implementation for NKN messaging protocol, IPFS media handling, and AES-128-GCM encryption format.
+The NKN messaging protocol, IPFS media handling, and AES-128-GCM encryption format are based on the dchat Desktop / nMobile implementations.
