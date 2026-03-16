@@ -1,0 +1,4 @@
+#!/bin/bash
+# ClawHub skill entry point — dispatches /dchat sub-commands to the CLI
+SKILL_DIR="$(cd "$(dirname "$0")" && pwd)"
+exec node "$SKILL_DIR/dist/cli.js" "$@"

@@ -11,139 +11,143 @@ import type { IncomingMessage } from "./types.js";
 
 const DATA_DIR = path.join(os.homedir(), ".dchat-clawhub");
 
-/**
- * Load or create bot identity.
- * Uses SafeStorage (encrypted) as primary, falls back to legacy plaintext seed file.
- */
+// ── Identity helpers ───────────────────────────────────────
+
+function getPassphrase(dataDir: string): string {
+  return `dchat:${os.hostname()}:${os.userInfo().username}:${dataDir}`;
+}
+
 function loadOrCreateIdentity(dataDir: string): { seed: string; address: string; isNew: boolean } {
   fs.mkdirSync(dataDir, { recursive: true });
   const storage = new SafeStorage(dataDir);
   const passphrase = getPassphrase(dataDir);
 
-  // Try SafeStorage first
   if (storage.exists()) {
     const identity = storage.load(passphrase);
     if (identity) return { ...identity, isNew: false };
   }
 
-  // Migrate legacy plaintext seed file if present
+  // Migrate legacy plaintext seed
   const legacySeedFile = path.join(dataDir, "seed");
   if (fs.existsSync(legacySeedFile)) {
     const seed = fs.readFileSync(legacySeedFile, "utf-8").trim();
     const address = NknClient.deriveAddress(seed);
     storage.save({ seed, address }, passphrase);
-    fs.unlinkSync(legacySeedFile); // remove plaintext after migration
+    fs.unlinkSync(legacySeedFile);
     return { seed, address, isNew: false };
   }
 
-  // Generate fresh identity
   const seed = NknClient.generateSeed();
   const address = NknClient.deriveAddress(seed);
   storage.save({ seed, address }, passphrase);
   return { seed, address, isNew: true };
 }
 
-/**
- * Derive a machine-local passphrase for unattended bot use.
- * Combines hostname + username + a fixed salt — unique per machine/user but no manual input needed.
- */
-function getPassphrase(dataDir: string): string {
-  return `dchat:${os.hostname()}:${os.userInfo().username}:${dataDir}`;
-}
+// ── Sub-command handlers ───────────────────────────────────
 
-async function main() {
-  const args = process.argv.slice(2);
+function cmdHelp() {
+  console.log(`dchat — Decentralized P2P bot communication over NKN
 
-  if (args.includes("--help") || args.includes("-h")) {
-    console.log(`dchat-bot — Decentralized P2P bot communication over NKN
+Commands:
+  dchat init                          Generate bot identity (no network needed)
+  dchat address                       Print bot's NKN address (no network needed)
+  dchat send <address> <message>      Send a text message
+  dchat send-image <address> <path>   Send an image
+  dchat send-audio <address> <path>   Send an audio file
+  dchat send-file <address> <path>    Send a file
+  dchat history <address> [limit]     Show message history with a peer
+  dchat listen                        Listen for incoming messages (daemon)
+  dchat interactive                   Start interactive REPL
+  dchat help                          Show this help
 
-Usage:
-  dchat-bot                     Start interactive mode
-  dchat-bot --init              Generate identity and exit (no network needed)
-  dchat-bot --seed <hex>        Use specific seed
-  dchat-bot --data-dir <path>   Custom data directory
-  dchat-bot --send <addr> <msg> Send a message and exit
-  dchat-bot --send-file <addr> <path>  Send a file and exit
-  dchat-bot --listen             Listen for messages (non-interactive)
-  dchat-bot --address            Print address and exit
+Options:
+  --seed <hex>          Use specific seed (overrides stored identity)
+  --data-dir <path>     Custom data directory (default: ~/.dchat-clawhub)
 
 Data stored in: ${DATA_DIR}`);
-    process.exit(0);
+}
+
+function cmdInit(dataDir: string) {
+  const identity = loadOrCreateIdentity(dataDir);
+  if (identity.isNew) {
+    console.log("Generated new bot identity.");
+  } else {
+    console.log("Bot identity already exists.");
   }
+  console.log(`Address: ${identity.address}`);
+  console.log(`Data dir: ${dataDir}`);
+}
 
-  // Parse args
-  let seed: string | undefined;
-  let dataDir = DATA_DIR;
-  let sendTarget: string | undefined;
-  let sendMessage: string | undefined;
-  let sendFilePath: string | undefined;
-  let sendFileTarget: string | undefined;
-  let listenMode = false;
-  let addressOnly = false;
-  let initOnly = false;
-
-  for (let i = 0; i < args.length; i++) {
-    switch (args[i]) {
-      case "--seed":
-        seed = args[++i];
-        break;
-      case "--data-dir":
-        dataDir = args[++i];
-        break;
-      case "--send":
-        sendTarget = args[++i];
-        sendMessage = args[++i];
-        break;
-      case "--send-file":
-        sendFileTarget = args[++i];
-        sendFilePath = args[++i];
-        break;
-      case "--listen":
-        listenMode = true;
-        break;
-      case "--address":
-        addressOnly = true;
-        break;
-      case "--init":
-        initOnly = true;
-        break;
-    }
+function cmdAddress(dataDir: string, explicitSeed?: string) {
+  if (explicitSeed) {
+    console.log(NknClient.deriveAddress(explicitSeed));
+    return;
   }
+  const identity = loadOrCreateIdentity(dataDir);
+  console.log(identity.address);
+}
 
-  // --init: generate identity offline and exit (no NKN connection)
-  if (initOnly) {
-    const identity = loadOrCreateIdentity(dataDir);
-    if (identity.isNew) {
-      console.log("Generated new bot identity.");
-    } else {
-      console.log("Bot identity already exists.");
-    }
-    console.log(`Address: ${identity.address}`);
-    console.log(`Data dir: ${dataDir}`);
-    process.exit(0);
-  }
-
-  // Resolve seed: explicit --seed flag, or load/create from SafeStorage
-  let address: string | undefined;
-  if (!seed) {
-    const identity = loadOrCreateIdentity(dataDir);
-    seed = identity.seed;
-    address = identity.address;
-    if (identity.isNew) {
-      console.log("Generated new bot identity.");
-    }
-  }
-
-  // --address: print derived address and exit (no NKN connection needed)
-  if (addressOnly) {
-    const addr = address ?? NknClient.deriveAddress(seed);
-    console.log(addr);
-    process.exit(0);
-  }
-
+async function cmdSend(dataDir: string, seed: string, target: string, message: string) {
   const bot = new DchatBot({ seed, dataDir });
+  try {
+    console.log("Connecting...");
+    await bot.start();
+    const id = await bot.sendText(target, message);
+    console.log(`Sent: ${id}`);
+  } finally {
+    await bot.stop();
+  }
+}
 
-  // Handle shutdown
+async function cmdSendMedia(
+  dataDir: string,
+  seed: string,
+  type: "image" | "audio" | "file",
+  target: string,
+  filePath: string,
+) {
+  const bot = new DchatBot({ seed, dataDir });
+  try {
+    console.log("Connecting...");
+    await bot.start();
+    let id: string;
+    switch (type) {
+      case "image":
+        id = await bot.sendImage(target, filePath);
+        break;
+      case "audio":
+        id = await bot.sendAudio(target, filePath);
+        break;
+      case "file":
+        id = await bot.sendFile(target, filePath);
+        break;
+    }
+    console.log(`Sent ${type}: ${id}`);
+    // Brief wait for IPFS upload completion
+    await new Promise((r) => setTimeout(r, 2000));
+  } finally {
+    await bot.stop();
+  }
+}
+
+function cmdHistory(dataDir: string, seed: string, peerAddress: string, limit: number) {
+  const bot = new DchatBot({ seed, dataDir });
+  const msgs = bot.getMessages(peerAddress, limit);
+  if (msgs.length === 0) {
+    console.log("No messages.");
+  } else {
+    for (const m of msgs) {
+      const dir = m.isOutbound ? "→" : "←";
+      const time = new Date(m.createdAt).toISOString().substring(11, 19);
+      const preview = m.content.length > 80 ? m.content.substring(0, 80) + "..." : m.content;
+      console.log(`${dir} [${time}] (${m.contentType}) ${preview}`);
+    }
+  }
+  bot.stop().catch(() => {});
+}
+
+async function cmdListen(dataDir: string, seed: string) {
+  const bot = new DchatBot({ seed, dataDir });
   const shutdown = async () => {
     console.log("\nShutting down...");
     await bot.stop();
@@ -152,28 +156,6 @@ Data stored in: ${DATA_DIR}`);
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
-  console.log("Connecting to NKN network...");
-  const connectedAddress = await bot.start();
-  console.log(`Bot address: ${connectedAddress}`);
-
-  // One-shot send mode
-  if (sendTarget && sendMessage) {
-    const id = await bot.sendText(sendTarget, sendMessage);
-    console.log(`Sent message ${id}`);
-    await bot.stop();
-    process.exit(0);
-  }
-
-  if (sendFileTarget && sendFilePath) {
-    const id = await bot.sendFile(sendFileTarget, sendFilePath);
-    console.log(`Sent file ${id}`);
-    // Wait a moment for IPFS upload to complete
-    await new Promise((r) => setTimeout(r, 2000));
-    await bot.stop();
-    process.exit(0);
-  }
-
-  // Message handler
   bot.on("message", (msg: IncomingMessage) => {
     const time = new Date(msg.timestamp).toISOString().substring(11, 19);
     const from = msg.from.substring(0, 16) + "...";
@@ -196,24 +178,48 @@ Data stored in: ${DATA_DIR}`);
     }
   });
 
-  bot.on("receipt", (_from: string, _msgId: string) => {
-    // Silent — bots don't need delivery noise
+  console.log("Connecting...");
+  const address = await bot.start();
+  console.log(`Listening as ${address} (Ctrl+C to exit)`);
+}
+
+async function cmdInteractive(dataDir: string, seed: string) {
+  const bot = new DchatBot({ seed, dataDir });
+  const shutdown = async () => {
+    console.log("\nShutting down...");
+    await bot.stop();
+    process.exit(0);
+  };
+  process.on("SIGINT", shutdown);
+  process.on("SIGTERM", shutdown);
+
+  bot.on("message", (msg: IncomingMessage) => {
+    const time = new Date(msg.timestamp).toISOString().substring(11, 19);
+    const from = msg.from.substring(0, 16) + "...";
+    switch (msg.contentType) {
+      case "text":
+      case "textExtension":
+        console.log(`\n[${time}] ${from}: ${msg.content}`);
+        break;
+      case "image":
+        console.log(`\n[${time}] ${from}: [image] ${msg.localFilePath ?? msg.content}`);
+        break;
+      case "audio":
+        console.log(`\n[${time}] ${from}: [audio] ${msg.localFilePath ?? "(inline)"}`);
+        break;
+      case "file": {
+        const fileName = msg.options?.fileName ?? "file";
+        console.log(`\n[${time}] ${from}: [file: ${fileName}] ${msg.localFilePath ?? msg.content}`);
+        break;
+      }
+    }
+    rl.prompt();
   });
 
-  if (listenMode) {
-    console.log("Listening for messages... (Ctrl+C to exit)");
-    return;
-  }
-
-  // Interactive mode
-  console.log("\nInteractive mode. Commands:");
-  console.log("  /send <address> <message>     Send text");
-  console.log("  /image <address> <path>       Send image");
-  console.log("  /audio <address> <path>       Send audio");
-  console.log("  /file <address> <path>        Send file");
-  console.log("  /history <address>            Show message history");
-  console.log("  /address                      Show bot address");
-  console.log("  /quit                         Exit\n");
+  console.log("Connecting...");
+  const address = await bot.start();
+  console.log(`Bot address: ${address}\n`);
+  console.log("Commands: /send /image /audio /file /history /address /quit\n");
 
   const rl = readline.createInterface({ input: process.stdin, output: process.stdout });
   rl.setPrompt("> ");
@@ -221,75 +227,42 @@ Data stored in: ${DATA_DIR}`);
 
   rl.on("line", async (line: string) => {
     const trimmed = line.trim();
-    if (!trimmed) {
-      rl.prompt();
-      return;
-    }
-
+    if (!trimmed) { rl.prompt(); return; }
     const parts = trimmed.split(/\s+/);
     const cmd = parts[0];
-
     try {
       switch (cmd) {
         case "/send": {
-          const addr = parts[1];
-          const text = parts.slice(2).join(" ");
-          if (!addr || !text) {
-            console.log("Usage: /send <address> <message>");
-            break;
-          }
-          const id = await bot.sendText(addr, text);
-          console.log(`Sent: ${id}`);
+          const [, addr, ...rest] = parts;
+          if (!addr || rest.length === 0) { console.log("Usage: /send <address> <message>"); break; }
+          console.log(`Sent: ${await bot.sendText(addr, rest.join(" "))}`);
           break;
         }
         case "/image": {
-          const addr = parts[1];
-          const filePath = parts[2];
-          if (!addr || !filePath) {
-            console.log("Usage: /image <address> <path>");
-            break;
-          }
-          const id = await bot.sendImage(addr, filePath);
-          console.log(`Sent image: ${id}`);
+          if (!parts[1] || !parts[2]) { console.log("Usage: /image <address> <path>"); break; }
+          console.log(`Sent image: ${await bot.sendImage(parts[1], parts[2])}`);
           break;
         }
         case "/audio": {
-          const addr = parts[1];
-          const filePath = parts[2];
-          if (!addr || !filePath) {
-            console.log("Usage: /audio <address> <path>");
-            break;
-          }
-          const id = await bot.sendAudio(addr, filePath);
-          console.log(`Sent audio: ${id}`);
+          if (!parts[1] || !parts[2]) { console.log("Usage: /audio <address> <path>"); break; }
+          console.log(`Sent audio: ${await bot.sendAudio(parts[1], parts[2])}`);
           break;
         }
         case "/file": {
-          const addr = parts[1];
-          const filePath = parts[2];
-          if (!addr || !filePath) {
-            console.log("Usage: /file <address> <path>");
-            break;
-          }
-          const id = await bot.sendFile(addr, filePath);
-          console.log(`Sent file: ${id}`);
+          if (!parts[1] || !parts[2]) { console.log("Usage: /file <address> <path>"); break; }
+          console.log(`Sent file: ${await bot.sendFile(parts[1], parts[2])}`);
           break;
         }
         case "/history": {
-          const addr = parts[1];
-          if (!addr) {
-            console.log("Usage: /history <address>");
-            break;
-          }
-          const msgs = bot.getMessages(addr);
-          if (msgs.length === 0) {
-            console.log("No messages.");
-          } else {
+          if (!parts[1]) { console.log("Usage: /history <address>"); break; }
+          const msgs = bot.getMessages(parts[1]);
+          if (msgs.length === 0) { console.log("No messages."); }
+          else {
             for (const m of msgs) {
               const dir = m.isOutbound ? "→" : "←";
-              const time = new Date(m.createdAt).toISOString().substring(11, 19);
-              const preview = m.content.length > 80 ? m.content.substring(0, 80) + "..." : m.content;
-              console.log(`  ${dir} [${time}] (${m.contentType}) ${preview}`);
+              const t = new Date(m.createdAt).toISOString().substring(11, 19);
+              const p = m.content.length > 80 ? m.content.substring(0, 80) + "..." : m.content;
+              console.log(`  ${dir} [${t}] (${m.contentType}) ${p}`);
             }
           }
           break;
@@ -307,11 +280,118 @@ Data stored in: ${DATA_DIR}`);
     } catch (err) {
       console.error("Error:", err instanceof Error ? err.message : err);
     }
-
     rl.prompt();
   });
 
   rl.on("close", shutdown);
+}
+
+// ── Main: parse args and dispatch ──────────────────────────
+
+async function main() {
+  const args = process.argv.slice(2);
+
+  // Extract global options first
+  let dataDir = DATA_DIR;
+  let explicitSeed: string | undefined;
+  const positional: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    switch (args[i]) {
+      case "--data-dir":
+        dataDir = args[++i];
+        break;
+      case "--seed":
+        explicitSeed = args[++i];
+        break;
+      default:
+        positional.push(args[i]);
+    }
+  }
+
+  const subcommand = positional[0] ?? "help";
+
+  // Resolve seed for commands that need it
+  const resolveSeed = (): string => {
+    if (explicitSeed) return explicitSeed;
+    return loadOrCreateIdentity(dataDir).seed;
+  };
+
+  switch (subcommand) {
+    case "help":
+    case "--help":
+    case "-h":
+      cmdHelp();
+      break;
+
+    case "init":
+      cmdInit(dataDir);
+      break;
+
+    case "address":
+      cmdAddress(dataDir, explicitSeed);
+      break;
+
+    case "send": {
+      const target = positional[1];
+      const message = positional.slice(2).join(" ");
+      if (!target || !message) {
+        console.error("Usage: dchat send <address> <message>");
+        process.exit(1);
+      }
+      await cmdSend(dataDir, resolveSeed(), target, message);
+      break;
+    }
+
+    case "send-image": {
+      if (!positional[1] || !positional[2]) {
+        console.error("Usage: dchat send-image <address> <path>");
+        process.exit(1);
+      }
+      await cmdSendMedia(dataDir, resolveSeed(), "image", positional[1], positional[2]);
+      break;
+    }
+
+    case "send-audio": {
+      if (!positional[1] || !positional[2]) {
+        console.error("Usage: dchat send-audio <address> <path>");
+        process.exit(1);
+      }
+      await cmdSendMedia(dataDir, resolveSeed(), "audio", positional[1], positional[2]);
+      break;
+    }
+
+    case "send-file": {
+      if (!positional[1] || !positional[2]) {
+        console.error("Usage: dchat send-file <address> <path>");
+        process.exit(1);
+      }
+      await cmdSendMedia(dataDir, resolveSeed(), "file", positional[1], positional[2]);
+      break;
+    }
+
+    case "history": {
+      if (!positional[1]) {
+        console.error("Usage: dchat history <address> [limit]");
+        process.exit(1);
+      }
+      const limit = positional[2] ? parseInt(positional[2], 10) : 50;
+      cmdHistory(dataDir, resolveSeed(), positional[1], limit);
+      break;
+    }
+
+    case "listen":
+      await cmdListen(dataDir, resolveSeed());
+      break;
+
+    case "interactive":
+      await cmdInteractive(dataDir, resolveSeed());
+      break;
+
+    default:
+      console.error(`Unknown command: ${subcommand}\nRun 'dchat help' for usage.`);
+      process.exit(1);
+  }
 }
 
 main().catch((err) => {
