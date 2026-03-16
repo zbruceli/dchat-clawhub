@@ -19,6 +19,15 @@ npm run start          # Run CLI bot (node dist/cli.js)
 
 Run a single test file: `npx vitest run tests/crypto.test.ts`
 
+## ClawHub Skill
+
+This project is an OpenClaw/ClawHub-compatible skill. The `SKILL.md` in the project root defines the skill metadata and agent instructions. Key files:
+
+- `SKILL.md` — Skill manifest (frontmatter + instructions for the agent)
+- `install.sh` — Auto-installs deps and builds on first use
+
+The skill name is `dchat` and is user-invocable as `/dchat`.
+
 ## Architecture
 
 ```
@@ -26,10 +35,10 @@ src/
   index.ts      — Library exports (public API)
   bot.ts        — DchatBot: main orchestrator, event emitter for messages
   client.ts     — NknClient: NKN MultiClient wrapper (connect, send, receive)
-  messaging     — Handled within bot.ts (send/receive, receipts, dedup)
   crypto.ts     — AES-128-GCM encrypt/decrypt (nMobile-compatible wire format)
   ipfs.ts       — IpfsService: upload/download via IPFS HTTP API with gateway fallback
   media.ts      — MediaService: image/audio/file encrypt+upload, download+decrypt
+  storage.ts    — SafeStorage: encrypted identity persistence (AES-256-GCM + PBKDF2)
   db.ts         — MessageDb: SQLite message store and peer tracking (better-sqlite3)
   types.ts      — All TypeScript types (MessageData, MessageOptions, etc.)
   cli.ts        — CLI entry point with interactive REPL and one-shot modes
