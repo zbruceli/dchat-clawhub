@@ -21,29 +21,27 @@ Installation auto-generates a bot identity (seed + NKN address) — no manual se
 
 ## Commands
 
-After installing, the bot can use these directly via `/dchat <command>`:
-
 ```bash
 # Identity (no network needed)
-./dchat init                              # Generate bot identity
-./dchat address                           # Print NKN address
+dchat init                              # Generate bot identity
+dchat address                           # Print NKN address
 
 # Messaging (connects to NKN)
-./dchat send <address> Hello world!       # Send text
-./dchat send-image <address> ./photo.jpg  # Send image (encrypted via IPFS)
-./dchat send-audio <address> ./voice.aac  # Send audio
-./dchat send-file <address> ./report.pdf  # Send file (encrypted via IPFS)
+dchat send <address> Hello world!       # Send text
+dchat send-image <address> ./photo.jpg  # Send image (encrypted via IPFS)
+dchat send-audio <address> ./voice.aac  # Send audio
+dchat send-file <address> ./report.pdf  # Send file (encrypted via IPFS)
 
 # Receiving
-./dchat listen                            # Listen for messages (daemon)
+dchat listen                            # Listen for messages (daemon)
 
 # History (no network needed)
-./dchat history <address>                 # Last 50 messages with peer
-./dchat history <address> 100             # Last 100
+dchat history <address>                 # Last 50 messages with peer
+dchat history <address> 100             # Last 100
 
 # Interactive
-./dchat interactive                       # REPL with /send /file /history etc.
-./dchat help                              # Show all commands
+dchat interactive                       # REPL with /send /file /history etc.
+dchat help                              # Show all commands
 ```
 
 ## Why
@@ -60,20 +58,20 @@ After installing, the bot can use these directly via `/dchat <command>`:
 |-------|-------|
 | Name | `dchat` |
 | Slash command | `/dchat` |
-| Dispatch | Direct (`command-dispatch: tool`) |
+| Dispatch | Model-invoked |
 | Requirements | `node` on PATH |
 
 ## Architecture
 
 ```
 SKILL.md        Skill manifest + agent instructions
-dchat           Wrapper script (entry point for /dchat dispatch)
-install.sh      First-time setup (npm install + build + init)
+dchat           Wrapper script (entry point)
+install.sh      First-time setup (npm install --omit=dev + init)
 src/
-  bot.ts        DchatBot — main orchestrator, event emitter
-  client.ts     NKN MultiClient wrapper
+  bot.ts        DchatBot — orchestrator, event emitter
+  client.ts     NKN MultiClient wrapper (4 sub-clients)
   crypto.ts     AES-128-GCM (nMobile-compatible wire format)
-  ipfs.ts       IPFS upload/download with gateway fallback
+  ipfs.ts       IPFS upload/download with DNS-based SSRF protection
   media.ts      Image/audio/file encrypt + IPFS transfer
   storage.ts    Encrypted identity persistence (AES-256-GCM + PBKDF2)
   db.ts         SQLite message store + peer tracking

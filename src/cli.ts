@@ -8,6 +8,7 @@ import readline from "readline";
 import { DchatBot } from "./bot.js";
 import { NknClient } from "./client.js";
 import { SafeStorage } from "./storage.js";
+import { MessageDb } from "./db.js";
 import type { IncomingMessage } from "./types.js";
 
 const DATA_DIR = path.join(os.homedir(), ".dchat-clawhub");
@@ -84,20 +85,38 @@ function cmdHelp() {
 Commands:
   dchat init                          Generate bot identity (no network needed)
   dchat address                       Print bot's NKN address (no network needed)
-  dchat send <address> <message>      Send a text message
-  dchat send-image <address> <path>   Send an image
-  dchat send-audio <address> <path>   Send an audio file
-  dchat send-file <address> <path>    Send a file
-  dchat history <address> [limit]     Show message history with a peer
+  dchat send <to> <message>           Send a text message
+  dchat send-image <to> <path>        Send an image
+  dchat send-audio <to> <path>        Send an audio file
+  dchat send-file <to> <path>         Send a file
+  dchat history <peer> [limit]        Show message history with a peer
+  dchat contacts add <address> <alias>  Add a contact with alias
+  dchat contacts remove <alias>         Remove a contact
+  dchat contacts list                   List all contacts
   dchat listen                        Listen for incoming messages (daemon)
   dchat interactive                   Start interactive REPL
   dchat help                          Show this help
+
+<to> and <peer> accept either a 64-char NKN address or a contact alias.
 
 Options:
   --seed <hex>          Use specific seed (overrides stored identity)
   --data-dir <path>     Custom data directory (default: ~/.dchat-clawhub)
 
 Data stored in: ${DATA_DIR}`);
+}
+
+/** Resolve an alias or address to an NKN address using the contacts DB. */
+function resolveAddress(dataDir: string, addressOrAlias: string): string {
+  if (/^[0-9a-f]{64}$/i.test(addressOrAlias)) return addressOrAlias;
+  const db = new MessageDb(dataDir);
+  const resolved = db.resolveAlias(addressOrAlias);
+  db.close();
+  if (!resolved) {
+    console.error(`Unknown contact: "${addressOrAlias}". Use 'dchat contacts list' to see contacts.`);
+    process.exit(1);
+  }
+  return resolved;
 }
 
 function cmdInit(dataDir: string) {
@@ -123,12 +142,8 @@ function cmdAddress(dataDir: string, explicitSeed?: string) {
 async function cmdSend(dataDir: string, seed: string, target: string, message: string) {
   const bot = new DchatBot({ seed, dataDir });
   console.log("Connecting...");
-  const address = await bot.start();
-  console.log(`From: ${address}`);
-  console.log(`To:   ${target}`);
-  console.log(`Data: ${dataDir}`);
+  await bot.start();
   // Wait for all sub-clients to establish relay routes
-  console.log("Stabilizing connection...");
   await new Promise((r) => setTimeout(r, 3000));
   const id = await bot.sendTextAwait(target, message);
   console.log(`Sent: ${id}`);
@@ -143,26 +158,23 @@ async function cmdSendMedia(
   filePath: string,
 ) {
   const bot = new DchatBot({ seed, dataDir });
-  try {
-    console.log("Connecting...");
-    await bot.start();
-    let id: string;
-    switch (type) {
-      case "image":
-        id = await bot.sendImage(target, filePath);
-        break;
-      case "audio":
-        id = await bot.sendAudio(target, filePath);
-        break;
-      case "file":
-        id = await bot.sendFile(target, filePath);
-        break;
-    }
-    console.log(`Sent ${type}: ${id}`);
-    process.exit(0);
-  } finally {
-    await bot.stop();
+  console.log("Connecting...");
+  await bot.start();
+  await new Promise((r) => setTimeout(r, 3000));
+  let id: string;
+  switch (type) {
+    case "image":
+      id = await bot.sendImage(target, filePath);
+      break;
+    case "audio":
+      id = await bot.sendAudio(target, filePath);
+      break;
+    case "file":
+      id = await bot.sendFile(target, filePath);
+      break;
   }
+  console.log(`Sent ${type}: ${id}`);
+  process.exit(0);
 }
 
 function cmdHistory(dataDir: string, seed: string, peerAddress: string, limit: number) {
@@ -183,8 +195,10 @@ function cmdHistory(dataDir: string, seed: string, peerAddress: string, limit: n
 
 async function cmdListen(dataDir: string, seed: string) {
   const bot = new DchatBot({ seed, dataDir });
+  const contactDb = new MessageDb(dataDir);
   const shutdown = async () => {
     console.log("\nShutting down...");
+    contactDb.close();
     await bot.stop();
     process.exit(0);
   };
@@ -193,7 +207,8 @@ async function cmdListen(dataDir: string, seed: string) {
 
   bot.on("message", (msg: IncomingMessage) => {
     const time = new Date(msg.timestamp).toISOString().substring(11, 19);
-    const from = msg.from.substring(0, 16) + "...";
+    const alias = contactDb.getAlias(msg.from);
+    const from = alias ?? msg.from.substring(0, 16) + "...";
     switch (msg.contentType) {
       case "text":
       case "textExtension":
@@ -220,8 +235,10 @@ async function cmdListen(dataDir: string, seed: string) {
 
 async function cmdInteractive(dataDir: string, seed: string) {
   const bot = new DchatBot({ seed, dataDir });
+  const contactDb = new MessageDb(dataDir);
   const shutdown = async () => {
     console.log("\nShutting down...");
+    contactDb.close();
     await bot.stop();
     process.exit(0);
   };
@@ -230,7 +247,8 @@ async function cmdInteractive(dataDir: string, seed: string) {
 
   bot.on("message", (msg: IncomingMessage) => {
     const time = new Date(msg.timestamp).toISOString().substring(11, 19);
-    const from = msg.from.substring(0, 16) + "...";
+    const alias = contactDb.getAlias(msg.from);
+    const from = alias ?? msg.from.substring(0, 16) + "...";
     switch (msg.contentType) {
       case "text":
       case "textExtension":
@@ -367,51 +385,103 @@ async function main() {
       cmdAddress(dataDir, explicitSeed);
       break;
 
+    case "contacts": {
+      const action = positional[1];
+      const db = new MessageDb(dataDir);
+      switch (action) {
+        case "add": {
+          const addr = positional[2];
+          const alias = positional[3];
+          if (!addr || !alias) {
+            console.error("Usage: dchat contacts add <address> <alias>");
+            process.exit(1);
+          }
+          if (!/^[0-9a-f]{64}$/i.test(addr)) {
+            console.error("Address must be a 64-character hex string.");
+            process.exit(1);
+          }
+          db.addContact(addr, alias);
+          console.log(`Added contact: ${alias} → ${addr}`);
+          break;
+        }
+        case "remove": {
+          const target = positional[2];
+          if (!target) {
+            console.error("Usage: dchat contacts remove <alias|address>");
+            process.exit(1);
+          }
+          if (db.removeContact(target)) {
+            console.log(`Removed contact: ${target}`);
+          } else {
+            console.error(`Contact not found: ${target}`);
+          }
+          break;
+        }
+        case "list": {
+          const contacts = db.listContacts();
+          if (contacts.length === 0) {
+            console.log("No contacts.");
+          } else {
+            for (const c of contacts) {
+              const alias = c.name ? `${c.name} ` : "";
+              console.log(`  ${alias}${c.address}`);
+            }
+          }
+          break;
+        }
+        default:
+          console.error("Usage: dchat contacts <add|remove|list>");
+          process.exit(1);
+      }
+      db.close();
+      break;
+    }
+
     case "send": {
       const target = positional[1];
       const message = positional.slice(2).join(" ");
       if (!target || !message) {
-        console.error("Usage: dchat send <address> <message>");
+        console.error("Usage: dchat send <address|alias> <message>");
         process.exit(1);
       }
-      await cmdSend(dataDir, resolveSeed(), target, message);
+      await cmdSend(dataDir, resolveSeed(), resolveAddress(dataDir, target), message);
       break;
     }
 
     case "send-image": {
       if (!positional[1] || !positional[2]) {
-        console.error("Usage: dchat send-image <address> <path>");
+        console.error("Usage: dchat send-image <address|alias> <path>");
         process.exit(1);
       }
-      await cmdSendMedia(dataDir, resolveSeed(), "image", positional[1], positional[2]);
+      await cmdSendMedia(dataDir, resolveSeed(), "image", resolveAddress(dataDir, positional[1]), positional[2]);
       break;
     }
 
     case "send-audio": {
       if (!positional[1] || !positional[2]) {
-        console.error("Usage: dchat send-audio <address> <path>");
+        console.error("Usage: dchat send-audio <address|alias> <path>");
         process.exit(1);
       }
-      await cmdSendMedia(dataDir, resolveSeed(), "audio", positional[1], positional[2]);
+      await cmdSendMedia(dataDir, resolveSeed(), "audio", resolveAddress(dataDir, positional[1]), positional[2]);
       break;
     }
 
     case "send-file": {
       if (!positional[1] || !positional[2]) {
-        console.error("Usage: dchat send-file <address> <path>");
+        console.error("Usage: dchat send-file <address|alias> <path>");
         process.exit(1);
       }
-      await cmdSendMedia(dataDir, resolveSeed(), "file", positional[1], positional[2]);
+      await cmdSendMedia(dataDir, resolveSeed(), "file", resolveAddress(dataDir, positional[1]), positional[2]);
       break;
     }
 
     case "history": {
       if (!positional[1]) {
-        console.error("Usage: dchat history <address> [limit]");
+        console.error("Usage: dchat history <address|alias> [limit]");
         process.exit(1);
       }
       const limit = positional[2] ? parseInt(positional[2], 10) : 50;
-      cmdHistory(dataDir, resolveSeed(), positional[1], limit);
+      cmdHistory(dataDir, resolveSeed(), resolveAddress(dataDir, positional[1]), limit);
       break;
     }
 

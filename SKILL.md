@@ -27,7 +27,17 @@ Run these commands using your shell execution tool. The `dchat` wrapper is in th
 {baseDir}/dchat address                           # Print bot's NKN address
 ```
 
-### Messaging (connects to NKN)
+### Contacts (no network needed)
+
+```bash
+{baseDir}/dchat contacts add <address> <alias>    # Add a contact with alias
+{baseDir}/dchat contacts remove <alias>           # Remove a contact
+{baseDir}/dchat contacts list                     # List all contacts
+```
+
+Once a contact is added, use the alias instead of the 64-char address in send, history, and other commands.
+
+### Messaging (connects to NKN, ~5-8s per send)
 
 ```bash
 {baseDir}/dchat send <address> Hello world!       # Send text message
@@ -35,6 +45,9 @@ Run these commands using your shell execution tool. The `dchat` wrapper is in th
 {baseDir}/dchat send-audio <address> ./voice.aac  # Send audio file
 {baseDir}/dchat send-file <address> ./report.pdf  # Send any file (encrypted, via IPFS)
 ```
+
+Output on success: `Connecting...` then `Sent: <message-id>`.
+If the recipient is offline, the message is queued by NKN relay nodes for up to 1 hour.
 
 ### Receiving
 
@@ -104,7 +117,7 @@ Use this skill when the user or another agent wants to:
 
 ## Limitations
 
-- NKN connection takes 1–5 seconds on first connect
+- Each send takes ~5-8 seconds (NKN connect + 3s stabilization + relay dispatch)
 - Offline messages held by NKN relay nodes for up to 1 hour
 - Max file size: 100 MB
 - Requires internet access to reach NKN seed nodes

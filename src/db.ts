@@ -126,6 +126,47 @@ export class MessageDb {
       .run(address, name ?? null, Date.now(), Date.now(), Date.now(), name ?? null);
   }
 
+  // ── Contacts ─────────────────────────────────────────────
+
+  addContact(address: string, alias: string): void {
+    this.db
+      .prepare(
+        `INSERT INTO peer (address, name, last_seen_at, created_at)
+         VALUES (?, ?, ?, ?)
+         ON CONFLICT(address) DO UPDATE SET name = ?`,
+      )
+      .run(address, alias, Date.now(), Date.now(), alias);
+  }
+
+  removeContact(addressOrAlias: string): boolean {
+    const address = this.resolveAlias(addressOrAlias) ?? addressOrAlias;
+    const result = this.db.prepare("DELETE FROM peer WHERE address = ?").run(address);
+    return result.changes > 0;
+  }
+
+  listContacts(): { address: string; name: string | null; lastSeenAt: number | null }[] {
+    const rows = this.db
+      .prepare("SELECT address, name, last_seen_at FROM peer ORDER BY name, address")
+      .all() as any[];
+    return rows.map((r) => ({ address: r.address, name: r.name, lastSeenAt: r.last_seen_at }));
+  }
+
+  /** Resolve an alias to an NKN address. Returns null if not found. */
+  resolveAlias(alias: string): string | null {
+    const row = this.db
+      .prepare("SELECT address FROM peer WHERE name = ? COLLATE NOCASE")
+      .get(alias) as { address: string } | undefined;
+    return row?.address ?? null;
+  }
+
+  /** Get the alias for an NKN address. Returns null if no alias set. */
+  getAlias(address: string): string | null {
+    const row = this.db
+      .prepare("SELECT name FROM peer WHERE address = ?")
+      .get(address) as { name: string | null } | undefined;
+    return row?.name ?? null;
+  }
+
   close(): void {
     this.db.close();
   }
