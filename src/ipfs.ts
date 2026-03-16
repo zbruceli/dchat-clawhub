@@ -1,3 +1,5 @@
+import dns from "dns/promises";
+import { isIP } from "net";
 import FormData from "form-data";
 import https from "https";
 import http from "http";
@@ -33,7 +35,7 @@ export class IpfsService {
   }
 
   async download(ipfsHash: string, preferredIp?: string): Promise<Buffer> {
-    const ordered = this.orderGateways(preferredIp);
+    const ordered = await this.orderGateways(preferredIp);
     let lastError: Error | null = null;
     for (const gw of ordered) {
       try {
@@ -45,25 +47,65 @@ export class IpfsService {
     throw lastError ?? new Error("No IPFS gateways configured");
   }
 
-  private isPrivateIp(ip: string): boolean {
-    const parts = ip.split(".");
-    if (parts.length !== 4) return true;
-    const octets = parts.map(Number);
-    if (octets.some((o) => isNaN(o) || o < 0 || o > 255)) return true;
-    const [a, b] = octets;
-    if (a === 10 || a === 127 || a === 0) return true;
-    if (a === 172 && b >= 16 && b <= 31) return true;
-    if (a === 192 && b === 168) return true;
-    if (a === 169 && b === 254) return true;
+  /**
+   * Check if an IP address is private/reserved (RFC 1918, loopback, link-local, etc.).
+   * Handles both IPv4 and IPv6.
+   */
+  private isPrivateOrReservedIp(ip: string): boolean {
+    // IPv4
+    const v4Parts = ip.split(".");
+    if (v4Parts.length === 4) {
+      const octets = v4Parts.map(Number);
+      if (octets.some((o) => isNaN(o) || o < 0 || o > 255)) return true;
+      const [a, b] = octets;
+      if (a === 10 || a === 127 || a === 0) return true;         // 10.0.0.0/8, loopback, 0.0.0.0
+      if (a === 172 && b >= 16 && b <= 31) return true;           // 172.16.0.0/12
+      if (a === 192 && b === 168) return true;                    // 192.168.0.0/16
+      if (a === 169 && b === 254) return true;                    // 169.254.0.0/16 link-local
+      return false;
+    }
+    // IPv6
+    const normalized = ip.toLowerCase();
+    if (normalized === "::1") return true;                         // loopback
+    if (normalized.startsWith("fe80:")) return true;               // link-local
+    if (normalized.startsWith("fc") || normalized.startsWith("fd")) return true; // ULA
+    if (normalized === "::" || normalized === "::0") return true;  // unspecified
+    // IPv4-mapped IPv6 (::ffff:10.0.0.1)
+    const v4Mapped = normalized.match(/^::ffff:(\d+\.\d+\.\d+\.\d+)$/);
+    if (v4Mapped) return this.isPrivateOrReservedIp(v4Mapped[1]);
     return false;
   }
 
-  private orderGateways(preferredIp?: string): IpfsGateway[] {
+  /**
+   * Resolve a hostname to IP addresses and check that none are private/reserved.
+   * Returns true if the host is safe to connect to (all resolved IPs are public).
+   */
+  private async isPublicHost(host: string): Promise<boolean> {
+    // If it's already an IP literal, check directly
+    if (isIP(host)) {
+      return !this.isPrivateOrReservedIp(host);
+    }
+    // Resolve DNS and check ALL resolved addresses
+    try {
+      const addresses = await dns.resolve(host);
+      if (addresses.length === 0) return false;
+      return addresses.every((addr) => !this.isPrivateOrReservedIp(addr));
+    } catch {
+      return false; // DNS resolution failed — reject
+    }
+  }
+
+  private async orderGateways(preferredIp?: string): Promise<IpfsGateway[]> {
     if (!preferredIp) return this.gateways;
     const preferred = this.gateways.filter((g) => g.host === preferredIp);
     const rest = this.gateways.filter((g) => g.host !== preferredIp);
     if (preferred.length === 0) {
-      if (this.isPrivateIp(preferredIp)) return this.gateways;
+      // Ad-hoc gateway from message options — resolve DNS and verify public
+      const isPublic = await this.isPublicHost(preferredIp);
+      if (!isPublic) {
+        console.warn(`[IpfsService] Rejected non-public gateway: ${preferredIp}`);
+        return this.gateways;
+      }
       return [{ host: preferredIp, port: 80, protocol: "http:" }, ...this.gateways];
     }
     return [...preferred, ...rest];

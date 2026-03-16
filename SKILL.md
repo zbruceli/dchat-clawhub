@@ -95,7 +95,7 @@ Use this skill when the user or another agent wants to:
 - AES-128-GCM encryption for all media before IPFS upload
 - Identity encrypted at rest (AES-256-GCM + PBKDF2, 100K iterations, file permissions 0600)
 - No centralized server — messages travel through NKN relay nodes
-- SSRF protection on IPFS gateway connections
+- SSRF protection: ad-hoc IPFS gateways from incoming messages are DNS-resolved and all IPs verified as public (rejects RFC 1918, loopback, link-local, ULA, IPv4-mapped IPv6)
 
 ## Limitations
 
