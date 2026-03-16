@@ -127,6 +127,9 @@ async function cmdSend(dataDir: string, seed: string, target: string, message: s
   console.log(`From: ${address}`);
   console.log(`To:   ${target}`);
   console.log(`Data: ${dataDir}`);
+  // Wait for all sub-clients to establish relay routes
+  console.log("Stabilizing connection...");
+  await new Promise((r) => setTimeout(r, 3000));
   const id = await bot.sendTextAwait(target, message);
   console.log(`Sent: ${id}`);
   process.exit(0);

@@ -122,13 +122,10 @@ export class DchatBot extends EventEmitter {
       this.db.updateStatusIfNotDelivered(msg.id, "sent");
     } catch (err) {
       const errMsg = err instanceof Error ? err.message : String(err);
-      // "Message timeout" = recipient offline, but message IS queued by NKN relays
-      // "failed to send with any client" = send failed entirely, message NOT queued
-      if (errMsg.includes("failed to send")) {
-        this.db.updateStatus(msg.id, "failed");
-        throw new Error(`Send failed — message not delivered. NKN error: ${errMsg}`);
-      } else if (errMsg.includes("timeout")) {
-        // Recipient offline — message queued by relay nodes for up to 1 hour
+      // Any timeout (including "failed to send with any client: ... Message timeout")
+      // means the NKN relay accepted the message but recipient didn't ACK (offline).
+      // The relay still queues the message for msgHoldingSeconds (1 hour).
+      if (errMsg.toLowerCase().includes("timeout")) {
         console.log("[dchat] Recipient offline — message queued by NKN relay (up to 1 hour)");
         this.db.updateStatusIfNotDelivered(msg.id, "sent");
       } else {
