@@ -123,10 +123,12 @@ function cmdAddress(dataDir: string, explicitSeed?: string) {
 async function cmdSend(dataDir: string, seed: string, target: string, message: string) {
   const bot = new DchatBot({ seed, dataDir });
   console.log("Connecting...");
-  await bot.start();
+  const address = await bot.start();
+  console.log(`From: ${address}`);
+  console.log(`To:   ${target}`);
+  console.log(`Data: ${dataDir}`);
   const id = await bot.sendTextAwait(target, message);
   console.log(`Sent: ${id}`);
-  // Exit immediately — NKN teardown logs noise (RPC timeouts) if we wait
   process.exit(0);
 }
 
